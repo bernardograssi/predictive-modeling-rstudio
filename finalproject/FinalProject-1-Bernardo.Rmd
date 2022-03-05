@@ -1,0 +1,561 @@
+---
+title: "FinalProject"
+author: "Bernardo Santos"
+date: "11/3/2021"
+output: word_document
+---
+
+# Load data set
+```{r}
+library(dplyr)
+library(magrittr)
+library(mosaic)
+library(rpart)
+library(partykit)
+library(randomForest)
+library(neuralnet)
+library(class)
+library(caret)
+library(mdsr)
+library(e1071)
+
+options(scipen = 999)
+
+Funds <- read.csv(file = 'Funds.csv', header = TRUE)
+head(Funds, 10)
+```
+
+# Check the missing values in the data set
+```{r}
+na_count <- sapply(Funds, function(y) round(sum(length(which(is.na(y))))/nrow(Funds), digits = 2))
+na_count <- data.frame(na_count)
+na_count <- cbind(colName = rownames(na_count), na_count)
+rownames(na_count) <- 1:nrow(na_count)
+colnames(na_count) <- c("colName", "rep_count")
+na_count[order(-na_count[,2]),]
+```
+# Get column names where missing values percentage is greater than 40%
+```{r}
+na_count_40 <- filter(na_count, rep_count >= 0.4)
+na_count_40
+```
+
+# Remove the clearly unneeded columns, such as free text and names that do not influence the dataset overall
+# Remove quarterly-based returns variables, since we cannot use all of them
+```{r}
+cols_remove <- c("fund_symbol", "fund_extended_name", "fund_family", "inception_date", "category", "investment_strategy", "currency", "top10_holdings")
+cols_remove_join <- c(cols_remove, na_count_40$colName)
+q_returns <- c()
+for(x in 2012:2020){
+  for(y in 1:4){
+    if(x == 2020 && y == 4){
+      
+    } else{
+      name <- paste("fund_return_",as.character(x), "_q",as.character(y), sep="")
+      if(name %in% cols_remove_join == FALSE){
+        q_returns[length(q_returns) + 1] <- name
+      }
+      
+    }
+    
+  }
+}
+cols_remove_join <- c(cols_remove_join, q_returns)
+new_funds <- Funds %>% 
+  dplyr::select(-cols_remove_join)
+head(new_funds, 10)
+```
+
+# Define target variables
+```{r}
+# Main targets as numerical variables: fund_return_3months, fund_return_1year, fund_return_5years, fund_return_10years.
+# Main target as categorical variables: return_rating.
+```
+
+# Perform vectorization
+```{r}
+encode_ordinal <- function(x, order = unique(x)) {
+  x <- as.numeric(factor(x, levels = order, exclude = NULL))
+  x
+}
+
+new_funds[["investment_type_encoded"]] <- encode_ordinal(new_funds[["investment_type"]])
+new_funds[["size_type_encoded"]] <- encode_ordinal(new_funds[["size_type"]])
+
+new_funds <- new_funds %>% 
+  dplyr::select(-c("investment_type", "size_type"))
+head(new_funds, 10)
+```
+
+# Performs standardization
+```{r}
+# Remove rows that contain missing data.
+new_funds <- new_funds[complete.cases(new_funds),]
+new_funds
+
+# Convert columns to numeric
+cols <- colnames(new_funds)
+new_funds[cols] <- sapply(new_funds[cols],as.numeric)
+sapply(new_funds, class)
+
+# Max and mins for standardization
+maxs <- apply(new_funds[1:102], 2, max) 
+mins <- apply(new_funds[1:102], 2, min)
+
+# Perform scaling
+funds_scaled <- as.data.frame(scale(new_funds[1:102], center = mins, scale = maxs - mins))
+funds_scaled$investment_type_encoded <- new_funds[["investment_type_encoded"]]
+funds_scaled$size_type_encoded <- new_funds[["size_type_encoded"]]
+head(funds_scaled, 10) # Print scaled data set
+```
+
+```{r}
+res <- as.data.frame(cor(funds_scaled))
+res <- as.data.frame(res["fund_return_10years"])
+res <- res %>% 
+  filter(abs(res$fund_return_10years) > .3) %>% 
+  arrange(desc(fund_return_10years))
+res
+```
+
+```{r}
+# Given the results from the correlation table from the last chunk, 
+```
+
+
+```{r}
+funds_scaled <- funds_scaled %>% 
+  dplyr::select(rating, return_rating, investment_type_encoded, size_type_encoded, price_earnings_ratio, price_book_ratio, price_sales_ratio, asset_cash, asset_stocks, asset_bonds, sector_basic_materials, sector_utilities, sector_communication_services, sector_technology, fund_return_ytd, fund_return_1year, category_return_1year, fund_return_3years, category_return_3years, fund_return_5years, fund_return_10years, category_return_5years, fund_beta_3years, category_beta_3years, fund_beta_5years, category_beta_5years, fund_mean_annual_return_3years, fund_mean_annual_return_3years, net_asset_value)
+
+head(funds_scaled, 10)
+```
+
+# Divide the data into training and testing
+```{r}
+set.seed(200)
+
+n <- nrow(funds_scaled)
+test_idx <- sample.int(n, size = round(0.2 * n))
+train <- funds_scaled[-test_idx,]
+test <- funds_scaled[test_idx,]
+nrow(funds_scaled)
+```
+
+# Numerical response variable -> fund_return_10years
+
+```{r}
+# The following chunks of code are related to the creation of models that are going to predict the numerical response variable 'fund_return_10years'.
+```
+
+# Null Model
+```{r}
+null_model_1 <- mean(train$fund_return_10years, na.rm=TRUE)
+results_null_1 <- data.frame(pred = null_model_1, original = test$fund_return_10years)
+results_null_1 <- results_null_1 %>% 
+  mutate(resid = round(pred - original, 2))
+cat("Sum of residuals squared of the null model: ", sum(results_null_1$resid^2))
+cat("\nMean of the null model: ", null_model_1)
+```
+
+# Linear Regression Models - Training
+# Linear Model 1 - Training
+```{r}
+lm1_train <- lm(fund_return_10years ~ return_rating + price_earnings_ratio + price_book_ratio + asset_cash + asset_stocks + asset_bonds + sector_basic_materials + sector_utilities + sector_communication_services + sector_technology + fund_return_ytd + category_return_1year, data = train)
+
+msummary(lm1_train)
+```
+# Linear Model 2 - Training
+```{r}
+lm2_train <- lm(fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_basic_materials + sector_utilities + sector_technology + category_return_1year, data = train)
+
+msummary(lm2_train)
+```
+
+# Predictive Analysis for Linear Model 1
+```{r}
+pred_lm1 <- predict(lm1_train, newdata=test)
+results_lm1 <- data.frame(pred = pred_lm1, original = test$fund_return_10years)
+results_lm1 <- results_lm1 %>% 
+  mutate(resid = round(pred - original, 2))
+cat("Sum of residuals squared for Linear Model 1:", sum(results_lm1$resid^2))
+```
+
+# Predictive Analysis for Linear Model 2
+```{r}
+pred_lm2 <- predict(lm2_train, newdata=test)
+results_lm2 <- data.frame(pred = pred_lm2, original = test$fund_return_10years)
+results_lm2 <- results_lm2 %>% 
+  mutate(resid = round(pred - original, 2))
+cat("Sum of residuals squared for Linear Model 2:", sum(results_lm2$resid^2))
+```
+
+# Regression Tree Models - Training
+# Regression Tree Model 1 - Training
+```{r}
+reg_form_1 <- as.formula("fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_basic_materials + sector_utilities + sector_technology + category_return_1year")
+regtree_1 <- rpart(reg_form_1, data=train)
+regtree_1
+```
+
+# Regression Tree Model 1 - Predictive Analysis
+```{r}
+pred_tree_1 = predict(regtree_1, type="vector")
+rsq_1 <- function (x, y) cor(x, y) ^ 2
+cat("R-Squared for Regression Tree Model 1:", rsq_1(train$fund_return_10years, pred_tree_1))
+
+results_tree_1 <- data.frame(pred = pred_tree_1, original = train$fund_return_10years)
+results_tree_1 <- results_tree_1 %>% 
+  mutate(resid = round(results_tree_1$pred - results_tree_1$original, 2))
+cat("\nSum of residuals squared for Regression Tree Model 1:", sum(results_tree_1$resid^2))
+```
+
+# Regression Tree Model 2 - Training
+```{r}
+reg_form_2 <- as.formula("fund_return_10years ~ return_rating + asset_stocks + sector_basic_materials + sector_technology + category_return_1year")
+regtree_2 <- rpart(reg_form_2, data=train)
+regtree_2
+```
+
+# Regression Tree Model 2 - Predictive Analysis
+```{r}
+pred_tree_2 = predict(regtree_2, type="vector")
+rsq_2 <- function (x, y) cor(x, y) ^ 2
+cat("R-Squared for Regression Tree Model 2: ", rsq_2(train$fund_return_10years, pred_tree_2))
+
+results_tree_2 <- data.frame(pred = pred_tree_2, original = train$fund_return_10years)
+results_tree_2 <- results_tree_2 %>% 
+  mutate(resid = round(results_tree_2$pred - results_tree_2$original, 2))
+cat("\nSum of residuals squared for Regression Tree Model 2:", sum(results_tree_2$resid^2))
+```
+
+# Random Forest Models - Training
+# Random Forest Model 1 - Training
+```{r}
+forest_form_1 <- as.formula("fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_basic_materials + sector_utilities + sector_technology + category_return_1year")
+forest_1 <- randomForest(forest_form_1, data=train, ntree=201, mtry=3)
+forest_1
+```
+
+# Random Forest Model 1 - Predictive Analysis
+```{r}
+pred_forest_1 <- predict(forest_1, newdata = test) 
+mse_forest_1 <- sum((pred_forest_1 - test$fund_return_10years)^2/nrow(test))
+cat("MSE: ", mse_forest_1)
+```
+
+# Random Forest Model 2 - Training
+```{r}
+forest_form_2 <- as.formula("fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_basic_materials + sector_utilities + sector_technology + category_return_1year")
+forest_2 <- randomForest(forest_form_1, data=train, ntree=201, mtry=5)
+forest_2
+```
+
+# Random Forest Model 2 - Predictive Analysis
+```{r}
+pred_forest_2 <- predict(forest_2, newdata = test) 
+mse_forest_2 <- sum((pred_forest_2 - test$fund_return_10years)^2/nrow(test))
+cat("MSE: ", mse_forest_2)
+```
+
+# Random Forest Model 3 - Training
+```{r}
+forest_form_3 <- as.formula("fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_basic_materials + sector_utilities + sector_technology + category_return_1year")
+forest_3 <- randomForest(forest_form_3, data=train, ntree=501, mtry=3)
+forest_3
+```
+
+# Random Forest Model 3 - Predictive Analysis
+```{r}
+pred_forest_3 <- predict(forest_3, newdata = test) 
+mse_forest_3 <- sum((pred_forest_3 - test$fund_return_10years)^2/nrow(test))
+cat("MSE: ", mse_forest_3)
+```
+
+# Random Forest Model 4 - Training
+```{r}
+forest_form_4 <- as.formula("fund_return_10years ~ price_book_ratio + asset_cash + asset_stocks + sector_technology + category_return_1year")
+forest_4 <- randomForest(forest_form_4, data=train, ntree=201, mtry=5)
+forest_4
+```
+
+
+```{r}
+pred_forest_4 <- predict(forest_4, newdata = test) 
+mse_forest_4 <- sum((pred_forest_4 - test$fund_return_10years)^2/nrow(test))
+cat("MSE: ", mse_forest_4)
+```
+
+```{r}
+#rating, return_rating, investment_type_encoded, size_type_encoded, price_earnings_ratio, price_book_ratio, price_sales_ratio, asset_cash, asset_stocks, asset_bonds, sector_basic_materials, sector_basic_utilities, sector_communication_services, sector_technology, fund_return_ytd, fund_return_1year, category_return_1year, fund_return_3years, category_return_3years, fund_return_5years, category_return_5years, fund_beta_3years, category_beta_3years, fund_beta_5years, category_beta_5years, fund_mean_annual_return_3years, fund_mean_annual_return_3years, net_asset_value
+```
+
+
+# Neural Network Models - Training
+# Neural Network Model 1 - Training
+```{r}
+neural_form_1 <- as.formula("fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_technology")
+
+nn_1 <- neuralnet(neural_form_1, data = train, hidden=c(3,2), linear.output = FALSE)
+plot(nn_1)
+```
+
+```{r}
+t <- test %>% 
+  dplyr::select(fund_return_10years, return_rating ,price_book_ratio , asset_cash, asset_stocks,sector_technology, net_asset_value,category_return_3years, fund_return_5years, category_return_5years, investment_type_encoded, size_type_encoded)
+```
+
+# Neural Network Model 1 - Predictive Analysis
+```{r}
+pred_nn_1<- compute(nn_1, t)
+pred_nn_result_1 <- pred_nn_1$net.result*(max(funds_scaled$fund_return_10years) - min(funds_scaled$fund_return_10years))+min(funds_scaled$fund_return_10years)
+
+MSE.nn <- sum((t - pred_nn_result_1)^2)/nrow(t)
+cat("MSE for NN:", MSE.nn, "\n")
+plot(t$fund_return_10years, pred_nn_result_1, col='blue', pch=16, ylab = "predicted rating NN", xlab = "real rating")
+```
+
+```{r}
+#Test the resulting output
+results1 <- data.frame(actual1 = t$fund_return_10years, prediction1 = pred_nn_1$net.result)
+roundedresults1 <-sapply(results1,round,digits=0)
+roundedresultsdf1 =data.frame(roundedresults1)
+table_nn1 <- table(roundedresultsdf1$actual1,roundedresultsdf1$prediction1)
+cat("\nAccuracy:", sum(diag(table_nn1))/nrow(t))
+```
+
+
+# Neural Network Model 2 - Training
+```{r}
+neural_form_2 <- as.formula("fund_return_10years ~ return_rating + price_book_ratio + asset_cash + asset_stocks + sector_technology")
+nn_2 <- neuralnet(neural_form_2, data = train, hidden=c(5,3,2),linear.output = FALSE)
+plot(nn_2)
+```
+
+# Neural Network Model 2 - Predictive Analysis
+```{r}
+pr_nn_2 <- compute(nn_2, t)
+nn_results_2 <- pr_nn_2$net.result*(max(funds_scaled$fund_return_10years) - min(funds_scaled$fund_return_10years))+min(funds_scaled$fund_return_10years)
+MSE.nn2 <- sum((t - nn_results_2)^2)/nrow(t)
+cat("MSE for NN:", MSE.nn2)
+plot(t$fund_return_10years, nn_results_2, col='blue', pch=16, ylab = "predicted rating NN", xlab = "real rating")
+```
+
+```{r}
+#Test the resulting output
+results2 <- data.frame(actual2 = t$fund_return_10years, prediction2 = pr_nn_2$net.result)
+roundedresults2 <-sapply(results2,round,digits=0)
+roundedresultsdf2 = data.frame(roundedresults2)
+
+table_nn2 <- table(roundedresultsdf2$actual2,roundedresultsdf2$prediction2)
+cat("\nAccuracy:", sum(diag(table_nn2))/nrow(t))
+```
+
+# Categorical response variable -> mutate -> return_over_inflation
+```{r}
+Funds2 <- new_funds %>% 
+  dplyr::select(rating, return_rating, risk_rating, investment_type_encoded, size_type_encoded, price_earnings_ratio, price_book_ratio, price_sales_ratio, asset_cash, asset_stocks, asset_bonds, asset_others, asset_preferred, asset_convertable, sector_basic_materials, sector_consumer_cyclical, sector_financial_services, sector_real_estate, sector_consumer_defensive, sector_healthcare, sector_utilities, sector_communication_services, sector_energy, sector_industrials, sector_technology, fund_return_ytd, fund_return_1year, category_return_1year, fund_return_3years, category_return_3years, fund_return_5years, category_return_5years, fund_return_10years, category_return_10years, fund_beta_3years, category_beta_3years, fund_beta_5years, category_beta_5years, fund_beta_10years, category_beta_10years, fund_mean_annual_return_3years, fund_mean_annual_return_3years, fund_mean_annual_return_10years, net_asset_value)
+```
+
+# Categorical response variable training/testing data sets
+```{r}
+Funds2 <- na.omit(Funds2)
+Funds2 <- Funds2 %>% 
+  mutate(Funds2, return_over_inflation=ifelse(fund_return_10years >= 12.37, TRUE, FALSE))
+Funds2
+```
+
+# Performs standardization
+```{r}
+# Remove rows that contain missing data.
+Funds2 <- Funds2[complete.cases(Funds2),]
+Funds2
+
+# Convert columns to numeric
+cols <- colnames(Funds2)
+Funds2[cols] <- sapply(Funds2[cols],as.numeric)
+sapply(Funds2, class)
+
+# Max and mins for standardization
+maxs <- apply(Funds2, 2, max) 
+mins <- apply(Funds2, 2, min)
+
+# Perform scaling
+funds_scaled_2 <- as.data.frame(scale(Funds2, center = mins, scale = maxs - mins))
+head(funds_scaled_2, 10) # Print scaled data set
+```
+
+```{r}
+set.seed(200)
+n <- nrow(funds_scaled_2)
+test_idx <- sample.int(n, size=round(0.2 * n))
+train2 <- funds_scaled_2[-test_idx,]
+test2 <- funds_scaled_2[test_idx,]
+```
+
+# Null Model
+```{r}
+null_model_2 <- prop.table(table(Funds2$return_over_inflation))
+null_model_2
+```
+# Multiple Regression Models
+# Multiple Logistic Regression Model 1 - Training
+```{r}
+lg1_train <- glm(return_over_inflation ~ net_asset_value + return_rating + asset_cash + asset_stocks + sector_technology + size_type_encoded, data = train2, family = binomial)
+summary(lg1_train)
+```
+
+# Multiple Logistic Regression Model 1 - Predictive Analysis
+```{r}
+# Let's take a look at how the model performs with predictions.
+logistic_1_probs = predict(lg1_train, type="response")
+favstats(logistic_1_probs)
+
+# Build predictions based on probabilities.
+logistic_1_pred = rep(FALSE, nrow(train2))
+logistic_1_pred[logistic_1_probs > 0.5] = TRUE
+
+# Misclassification table and accuracy.
+table1 <- table(logistic_1_pred, train2$return_over_inflation)
+table1
+cat("\nAccuracy: ", sum(diag(table1))/sum(table1))
+```
+
+# Multiple Logistic Regression Model 2 - Training
+```{r}
+lg2_train <- glm(return_over_inflation ~ net_asset_value + return_rating + asset_stocks + sector_technology + size_type_encoded, data = train2, family = binomial)
+summary(lg2_train)
+```
+
+# Multiple Logistic Regression Model 2 - Predictive Analysis
+```{r}
+# Let's take a look at how the model performs with predictions.
+logistic_2_probs = predict(lg2_train, type="response")
+favstats(logistic_2_probs)
+
+# Build predictions based on probabilities.
+logistic_2_pred = rep(FALSE, nrow(train2))
+logistic_2_pred[logistic_2_probs > 0.5] = TRUE
+
+# Misclassification table and accuracy.
+table2 <- table(logistic_2_pred, train2$return_over_inflation)
+table2
+cat("\nAccuracy: ", sum(diag(table2))/sum(table2))
+```
+
+# Classification Tree Models
+# Classification Tree Model 1 - Training
+```{r}
+class_tree_form <- as.formula("return_over_inflation ~ net_asset_value + return_rating + asset_cash + asset_stocks + sector_technology + size_type_encoded")
+class_tree_1 <- rpart(class_tree_form, data=train2)
+class_tree_1
+```
+
+# Classification Tree Model 1 - Predictive Analysis
+```{r}
+test21 <- test2 %>%
+   dplyr::mutate(x_return = ifelse(predict(class_tree_1, newdata = test2) >= 0.5, 1, 0))
+confusion <- tally(x_return ~ return_over_inflation, data=test21, format="count")
+cat("Accuracy:", sum(diag(confusion))/nrow(test21))
+```
+
+# Classification Tree Model 2 - Training
+```{r}
+class_tree_form_2 <- as.formula("return_over_inflation ~ net_asset_value + return_rating + asset_cash + sector_technology + asset_stocks")
+class_tree_2 <- rpart(class_tree_form_2, data=train2)
+class_tree_2
+```
+
+# Classification Tree Model 2 - Predictive Analysis
+```{r}
+test22 <- test2 %>%
+   dplyr::mutate(x_return = ifelse(predict(class_tree_2, newdata = test2) >= 0.5, 1, 0))
+confusion2 <- tally(x_return ~ return_over_inflation, data=test22, format="count")
+cat("Accuracy:", sum(diag(confusion2))/nrow(test22))
+```
+
+# Random Forest Models
+# Random Forest Model 1 - Training
+```{r}
+train2$return_over_inflation <- as.character(train2$return_over_inflation)
+train2$return_over_inflation <- as.factor(train2$return_over_inflation)
+
+f <- as.formula("return_over_inflation ~ net_asset_value + return_rating + asset_cash + asset_stocks + sector_technology + size_type_encoded")
+mod_forest <- randomForest(f, data=train2, ntree=200, mtry=3)
+mod_forest
+```
+
+# Random Forest Model 1 - Predictive Analysis
+```{r}
+sum(diag(mod_forest$confusion))/nrow(train2)
+```
+
+# Random Forest Model 2 - Training
+```{r}
+train2$return_over_inflation <- as.character(train2$return_over_inflation)
+train2$return_over_inflation <- as.factor(train2$return_over_inflation)
+f2 <- as.formula("return_over_inflation ~ net_asset_value + return_rating + asset_cash + asset_stocks + sector_technology")
+mod_forest2 <- randomForest(f2, data=train2, ntree=200, mtry=5)
+mod_forest2
+```
+
+# Random Forest Model 2 - Predictive Analysis
+```{r}
+sum(diag(mod_forest2$confusion))/nrow(train2)
+```
+
+# Random Forest Model 3 - Training
+```{r}
+train2$return_over_inflation <- as.character(train2$return_over_inflation)
+train2$return_over_inflation <- as.factor(train2$return_over_inflation)
+f3 <- as.formula("return_over_inflation ~ net_asset_value + return_rating + asset_cash + asset_stocks + sector_technology")
+mod_forest3 <- randomForest(f3, data=train2, ntree=300, mtry=3)
+mod_forest3
+```
+
+# Random Forest Model 3 - Predictive Analysis
+```{r}
+sum(diag(mod_forest3$confusion))/nrow(train2)
+```
+
+# KNN Models
+# KNN Model 1 - Training and Predictive Analysis
+```{r}
+train3 <- train2 %>% 
+  dplyr::select(return_rating , sector_technology , net_asset_value, asset_cash, asset_stocks)
+
+test3 <- test2 %>% 
+  dplyr::select(return_rating , sector_technology , net_asset_value, asset_cash, asset_stocks)
+
+knn_1 <- knn(train=train3, test=test3, cl=train2$return_over_inflation, k=2)
+confusion_knn <- table(knn_1, test2$return_over_inflation)
+confusionMatrix(confusion_knn)
+```
+
+
+# KNN Model 2 - Training and Predictive Analysis
+```{r}
+knn_2 <- knn(train=train3, test = test3, cl=train2$return_over_inflation, k=4)
+confusion_knn2 <- table(knn_2, test2$return_over_inflation)
+confusionMatrix(confusion_knn2)
+```
+
+# Naive Bayes Models
+# Naive Bayes Model 1 - Training and Predictive Analysis
+```{r}
+f <- as.formula("return_over_inflation ~ net_asset_value + return_rating + asset_cash + asset_stocks + sector_technology + size_type_encoded")
+
+nb_1 <- naiveBayes(f, data=train2)
+nb_pred_1 <- predict(nb_1, newdata=train2)
+confusiontable<- table(nb_pred_1, train2$return_over_inflation)
+confusionMatrix(confusiontable)
+```
+
+# Naive Bayes Model 2 - Training and Predictive Analysis
+```{r}
+f2 <- as.formula("return_over_inflation ~ net_asset_value + return_rating + sector_technology + size_type_encoded")
+
+nb_2 <- naiveBayes(f2, data=train2)
+nb_pred_2 <- predict(nb_2, newdata=train2)
+confusiontable2 <- table(nb_pred_2, train2$return_over_inflation)
+confusionMatrix(confusiontable2)
+```
