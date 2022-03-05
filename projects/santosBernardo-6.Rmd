@@ -1,0 +1,665 @@
+---
+title: "Homework-6"
+author: "Bernardo Santos"
+date: "10/16/2021"
+output: word_document
+---
+
+# Exercises 8.1(Models 1,2,3,4), 8.2(Models 1,2,3,4), 8.3, 8.5
+```{r}
+library(mdsr)
+library(ggplot2)
+library(rpart)
+library(NHANES)
+library(randomForest)
+library(partykit)
+library(mosaic)
+library(nasaweather)
+```
+
+# Exercise 8.1
+```{r}
+# The ability to get a good night’s sleep is correlated with many positive health outcomes. The NHANES data set contains a binary variable SleepTrouble that indicates whether each person has trouble sleeping. For each of the following models:
+
+#1. Build a classifier for SleepTrouble
+#2. Report its effectiveness on the NHANES training data
+#3. Make an appropriate visualization of the model
+#4. Interpret the results. What have you learned about people’s sleeping habits?
+#You may use whatever variable you like, except for SleepHrsNight.
+
+# 0 - Prepare the data
+
+# Handle missing data.
+head(NHANES, 10)
+nhanes_dataset <- NHANES[!is.na(NHANES$SleepTrouble),]
+nhanes_dataset<- nhanes_dataset[!is.na(nhanes_dataset$DaysMentHlthBad), ]
+nhanes_dataset<- nhanes_dataset[!is.na(nhanes_dataset$DaysPhysHlthBad), ]
+nhanes_dataset<- nhanes_dataset[!is.na(nhanes_dataset$Depressed), ]
+nhanes_dataset<- nhanes_dataset[!is.na(nhanes_dataset$BPSysAve), ]
+
+# Separate the data set into training and testing data
+set.seed(28)
+n <- nrow(nhanes_dataset)
+test_idx <- sample.int(n, size=round(0.2*n))
+train <- nhanes_dataset[-test_idx,]
+test <- nhanes_dataset[test_idx,]
+cat("Length of training set:", nrow(train), "\n")
+cat("Lenght of testing set:", nrow(test))
+```
+
+```{r}
+# 1. Null Model
+null_model <- train %>%
+  select(SleepTrouble)
+slp <- na.omit(null_model)
+tally(~ SleepTrouble, data=null_model, format="percent")
+
+# Visualization
+plot(null_model)
+
+# The simplest of the models, the null model tells us that around 25.68% of the people reported in the data set have sleep problems. The accuracy of the model therefore is around 74.42%, because it can simply predict that no one has sleep problems, leading to 74.42% of real accuracy.
+```
+
+```{r}
+#2. Logistic regression
+
+# First build a Decision Tree model and a Random Forest model to find the most important variables.
+# We proceed with DaysMentHlthBad, DaysPhysHlthBad, Depressed, and LittleInterest.
+example <- rpart(SleepTrouble ~. -SleepHrsNight, data=nhanes_dataset)
+example$variable.importance
+
+example_f <- as.formula("SleepTrouble ~ Education+MaritalStatus+HHIncomeMid+Poverty+Work+Weight+Pulse+BPSysAve+Diabetes+DaysPhysHlthBad+DaysMentHlthBad+LittleInterest+Depressed+PhysActiveDays+SmokeNow+Smoke100+Smoke100n+SmokeAge+Marijuana+HardDrugs+SexEver+SexAge+SexNumPartnLife+SexNumPartYear+SameSex+SexOrientation+PregnantNow -SleepHrsNight")
+example_forest <- randomForest(example_f, data=nhanes_dataset, ntree=201, mtry=1, na.action = na.exclude)
+importance(example_forest)
+```
+
+```{r}
+# Model 1 -> From the output we can tell that the following variables are statistically significant: DaysPhysHlthBad, DaysMentHlthBad, and Depressed.
+# Logistic regression model.
+logistic_1 = glm(SleepTrouble ~ DaysMentHlthBad+DaysPhysHlthBad+Depressed+BPSysAve, data=train, family=binomial)
+summary(logistic_1)
+
+# Let's take a look at how the model performs with predictions.
+logistic_1_probs = predict(logistic_1, type="response")
+favstats(logistic_1_probs)
+
+# Build predictions based on probabilities.
+logistic_1_pred = rep("No", nrow(train))
+logistic_1_pred[logistic_1_probs > 0.5] = "Yes"
+
+# Misclassification table and accuracy.
+table1 <- table(logistic_1_pred, train$SleepTrouble)
+table1
+cat("\nAccuracy: ", sum(diag(table1))/sum(table1))
+```
+
+```{r}
+# Model 2 -> We can get rid of BPSysAve because we know it is not statistically significant, since its p-value in the previous model is > 0.05.
+# Logistic Regression model.
+logistic_2 = glm(SleepTrouble ~ DaysMentHlthBad+DaysPhysHlthBad+Depressed, data=train, family=binomial(link="logit"))
+summary(logistic_2)
+
+# Let's take a look at how the model performs with predictions.
+logistic_2_probs = predict(logistic_2, type="response")
+favstats(logistic_2_probs)
+
+# Build predictions based on probabilities.
+logistic_2_pred = rep("No", nrow(train))
+logistic_2_pred[logistic_2_probs > 0.5] = "Yes"
+
+# Misclassification table and accuracy.
+table2 <- table(logistic_2_pred, train$SleepTrouble)
+table2
+cat("\nAccuracy: ", sum(diag(table2))/sum(table2))
+
+# The accuracy improved by a very slight margin: it moved from 75.16% (model 1), to 75.22% (model 2).
+```
+
+```{r}
+# Model 3 -> Now let's explore how a model will behave when only DaysMentHlthBad is used as an explanatory variable.
+# Logistic Regression model.
+logistic_3 = glm(SleepTrouble ~ DaysMentHlthBad, data=train, family=binomial(link="logit"))
+summary(logistic_3)
+
+# Check probabilities.
+logistic_3_probs=predict(logistic_3, type="response")
+favstats(logistic_3_probs)
+
+
+# Build predictions based on probabilities.
+logistic_3_pred = rep("No", nrow(train))
+logistic_3_pred[logistic_3_probs > 0.5] = "Yes"
+
+# Misclassification table and accuracy.
+table3 <- table(logistic_3_pred, train$SleepTrouble)
+table3
+cat("\nAccuracy: ", sum(diag(table3))/sum(table3))
+
+# The accuracy is 74.9% now, which is very similar to the other 2 models but since this one is the simplest, it may be the best option of them all.
+```
+
+```{r}
+# Visualization
+split <- 7.5
+train <- train %>% 
+  mutate(hiDaysMentHlth = DaysMentHlthBad >= split)
+
+plot <- ggplot(data = train, aes(x=DaysMentHlthBad, y=SleepTrouble)) + geom_count(aes(color = hiDaysMentHlth))  + geom_vline(xintercept = split, color = "dodgerblue", lty = 2)
+plot
+```
+
+```{r}
+#3. Decision tree
+# Decision Tree model.
+form <- as.formula("SleepTrouble ~ DaysMentHlthBad+DaysPhysHlthBad+Depressed")
+mod_tree <- rpart(form , data=train)
+mod_tree
+
+# Visualization.
+plot(as.party(mod_tree))
+```
+```{r}
+# The output from the decision tree model tells us that when DaysMentHlthBad is less than 4.5, people reported having no sleep trouble at a similar rate to the null model. When DaysPhysHlthBad is greater than 6.5 and DaysMentHlthBad is greater than 17.5, around 68.8% of people report having sleep trouble, which gives us an idea that many days of bad mental and physical health together may impact a person's sleep quality.
+printcp(mod_tree)
+```
+```{r}
+train <- train %>%
+   mutate(trouble_dtree = predict(mod_tree, type="class"))
+confusion <- tally(trouble_dtree ~ SleepTrouble, data=train, format="count")
+confusion
+
+# The result of the accuracy here shows us a slightly improvement from our logistic regression model, which was 74.3% and now is 75.79%.
+# We can We can see that the model is predicting too many "NO" for the SleepTrouble variable, and although it does a good job in 3822 of the occasions, it still predicts 1193 as "NO" when it should be "YES". 
+cat("\nAccuracy:", sum(diag(confusion)) / nrow(train))
+```
+
+```{r}
+# The output from this model shows us that when DaysMentHlthBad is less than 5.5, the model predicts "NO" SleepTrouble with 77.15% of confidence, which is fairly high.
+
+# The decision tree models leads us to bring up the argument that sleep trouble is closely related to how many mental health bad days you have. This is mainly supported by the output analyzed above, that when DaysMentHlthBad is less than 5.5, your chances of NOT having sleep trouble would be HIGHER.
+
+mod_tree1<- rpart(form, data=test)
+mod_tree1
+plot(as.party(mod_tree1))
+```
+
+
+```{r}
+#4. Random forest
+# Let's keep working with the same variables that we have been working with in the previous models.
+f <- as.formula("SleepTrouble ~ DaysMentHlthBad+DaysPhysHlthBad+Depressed")
+mod_forest <- randomForest(f, data=train, ntree=1000, mtry=3)
+mod_forest
+```
+
+```{r}
+# Here we can see that the accuracy result is slightly lower than the one we had with the decision tree model. The difference is quite small, but it is different.
+# Also notable that this model does well in predicting "NO", where the classification error is only 5.5%, but performs poorly in predicting "YES", where it has 77.8% classification error.
+sum(diag(mod_forest$confusion))/nrow(train)
+```
+
+```{r}
+# All in all, I would say that the decision tree and the random forest are the best models due to their accuracy. Although they have the best accuracy, they are barely 1% greater than the null model, which I assume is not a very good result. It is unlikely that a model with this short difference to the null model accuracy would be deployed in the industry.
+
+# What I have learned about people's sleeping habits:
+
+# (1) People who have had many days of bad mental health are more prone to having sleep trouble than those who have not had many days of bad mental health.
+# (2) Many bad days of physical health and many bad days of mental health can influence a person's sleeping quality, making that person present sleep trouble often.
+```
+
+
+# Exercise 8.2
+```{r}
+# Repeat the previous exercise, but now use the quantitative response variable SleepHrsNight.
+# Build and interpret the following models:
+# 1. Null model
+# 2. Multiple regression
+# 3. Regression tree
+# 4. Random forest
+
+# 0 - Prepare the data
+
+# Handle missing data.
+nhanes_dataset_2<- NHANES[!is.na(NHANES$SleepTrouble),]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$Age),]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$SexAge),]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$BPSysAve),]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$SleepHrsNight),]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$Work), ]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$Poverty), ]
+nhanes_dataset_2<- nhanes_dataset_2[!is.na(nhanes_dataset_2$DaysMentHlthBad), ]
+
+# Separate the data set into training and testing data
+set.seed(28)
+n <- nrow(nhanes_dataset_2)
+test_idx <- sample.int(n, size=round(0.2*n))
+train2 <- nhanes_dataset_2[-test_idx,]
+test2 <-nhanes_dataset_2[test_idx,]
+
+# Check which variables are statistically significant
+mod_tree2<- rpart(SleepHrsNight ~. -ID, data=nhanes_dataset)
+mod_tree2$variable.importance
+
+example_f_2 <- as.formula("SleepHrsNight ~ Education+MaritalStatus+HHIncomeMid+Poverty+Work+Weight+HealthGen+Age+Pulse+BPSysAve+Diabetes+DaysPhysHlthBad+DaysMentHlthBad+LittleInterest+Depressed+PhysActiveDays+SmokeNow+Smoke100+Smoke100n+SmokeAge+Marijuana+HardDrugs+SexEver+SexAge+SexNumPartnLife+SexNumPartYear+SameSex+SexOrientation+PregnantNow -SleepTrouble")
+example_forest2 <- randomForest(example_f_2, data=nhanes_dataset, ntree=201, mtry=1, na.action = na.exclude)
+importance(example_forest2)
+
+# From the output we can see that there are 5 variables we can use: Work, SexAge, Age, BPSysAve and DaysMentHlthBad.
+```
+
+```{r}
+# 1. Null Model
+null_model_2 <- mean(train2$SleepHrsNight, na.rm=TRUE)
+results <- data.frame(pred = null_model_2, orig = test2$SleepHrsNight) 
+results$resid<-round(results-test2$SleepHrsNight,0)
+cat("\nSum of residuals squared:", sum(results$resid^2))
+cat("\nMean of the null model:", null_model_2)
+
+# Now, since the SleepHrsNight variable is quantitative, we can conclude that the null model predicts that each person gets 6.93 hours of sleep at night, since the mean is 6.85.
+# The sum of the residuals squared is high: 1646!
+```
+
+```{r}
+# 2. Multiple Regression
+linear_model_1 <- lm(SleepHrsNight~ Work + SexAge + Age + BPSysAve + DaysMentHlthBad, data=train2)
+summary(linear_model_1)
+plot(linear_model_1)
+
+# From the output of this model, we can clearly see how insignificant the variable Work (p-value = 0.469, which is > 0.05) and Age (p-value = 0.428, which is > 0.05) are, so we must proceed without it.
+# R-Squared value is 0.0381, which is pretty low.
+```
+
+```{r}
+# As we can note from the output below, the sum of residuals squared dropped to 1606, making it a better fit than the null model.
+linear_p <- predict(linear_model_1, newdata=test2)
+results <- data.frame(pred = linear_p, original = test2$SleepHrsNight) 
+results$resid<-round(results-test2$SleepHrsNight,0)
+cat("\nSum of residuals squared for Linear Model 1:",sum(results$resid^2))
+```
+
+```{r}
+linear_model_2 <- lm(SleepHrsNight ~ DaysMentHlthBad + BPSysAve + SexAge, data=train2)
+summary(linear_model_2)
+
+# Now we can see that the variables that we decided to keep are statistically significant (p-value < 0.05), but the model just does not perform well. With a worse Adjusted R-Squared (0.032) than the first model (0.038), we can conclude that the multiple regression model simply does not work for this data. We can conclude that DaysMentHlthBad, BPSysAve, and SexAge cannot explain the SleepHrsNight well through a regression.
+```
+
+```{r}
+# From the output below we can see that the sum of residuals squared decreased to 1598.
+linear_p2 <- predict(linear_model_2, newdata=test2)
+results <- data.frame(pred = linear_p2, original = test2$SleepHrsNight) 
+results$resid<-round(results-test2$SleepHrsNight,0)
+cat("\nSum of residuals squared for Linear Model 2:", sum(results$resid^2))
+```
+
+```{r}
+# 3. Regression Tree
+# Using all variables, we can see which ones the decision tree finds importance: SleepTrouble, Work, and Poverty.
+# From this output here we can notice a few things:
+# (1). When a person has trouble sleeping (SleepTrouble=Yes), the predicted amount of hours slept per night is 6.23 when Poverty < 4.09 and 6.79 when Poverty >= 4.09.
+# (2). When a person has no trouble sleeping and it is working, the amount of hours slept per night is 6.89, versus 7.29 of who is not working, but looking for work.
+
+decform <- as.formula("SleepHrsNight ~ SleepTrouble+Work+Poverty")
+regtree <- rpart(decform, data=train2)
+plot(as.party(regtree))
+regtree
+```
+
+```{r}
+# The confusion matrix should not be created here, since SleepHrsNight is quantitative, and not categorical.
+# The R-Squared value, 5.9%, leads us to the conclusion that the model has not had a good fit to this data.
+# The sum of residuals squared is larger than the one seen in the linear model: now it is 20870, meaning that this model does not work well for this data.
+pred_tree = predict(regtree, type ="vector")
+rsq <- function (x, y) cor(x, y) ^ 2
+rsq(train2$SleepHrsNight, pred_tree)
+
+results <- data.frame(pred = pred_tree, original = train2$SleepHrsNight) 
+results$resid<-round(results-test2$SleepHrsNight,0)
+cat("\nSum of residuals squared for Regression Tree Model:", sum(results$resid^2))
+```
+
+```{r}
+# 4. Random Forest
+# '% Var explained' value of 7.33 from the output means that only 7.33% of the variability of the data is explained by the model, which is not good enough. 
+# Although the mean of squared residuals is small, it does not help much in this case, since the range of values for SleepHrsNight is around 2-12.
+mod_forest1 <- randomForest(decform, data=train2, ntree=201, mtry=3)
+mod_forest1
+```
+
+```{r}
+# Visualization
+# Here we can see that the there is a logarithmic correlation between the error and the number of trees in the random forest model.
+plot(mod_forest1)
+```
+
+
+```{r}
+# Output the accuracy of the random forest model.
+# Below we see the R-Squared value for the training set in the Random Forest model, which gives us the value of 11.87%, which is pretty bad. We can conclude that the Random Forest model is not adequate for the purposes of this specific exercise.
+
+pred1 = predict(mod_forest1,type ="response")
+rsq <- function (x, y) cor(x, y) ^ 2
+cat("R-Squared: ", rsq(train2$SleepHrsNight, pred1))
+
+results <- data.frame(pred = pred1, original = train2$SleepHrsNight) 
+results$resid<-round(results-test2$SleepHrsNight,0)
+cat("\nSum of residuals squared for Regression Tree Model:", sum(results$resid^2))
+```
+
+# Exercise 8.3
+```{r}
+# Repeat either of the previous exercises, but this time first separate the NHANES data set uniformly at random into 75% training and 25% testing sets. Compare the effectiveness of each model on training vs. testing data.
+
+set.seed(28)
+n <- nrow(NHANES)
+idx <- sample.int(n, size=round(.25*n))
+train = NHANES[-idx,]
+test = NHANES[idx,]
+```
+
+```{r}
+train1<- train[!is.na(train$SleepTrouble),]
+train1<- train1[!is.na(train1$DaysMentHlthBad), ]
+train1<- train1[!is.na(train1$DaysPhysHlthBad), ]
+train1<- train1[!is.na(train1$AgeDecade), ]
+train1<- train1[!is.na(train1$HHIncome), ]
+train1<- train1[!is.na(train1$Age), ]
+train1<- train1[!is.na(train1$Weight), ]
+train1<- train1[!is.na(train1$ID), ]
+nrow(train1)
+```
+
+```{r}
+test1<- test[!is.na(test$SleepTrouble),]
+test1<- test1[!is.na(test1$DaysMentHlthBad), ]
+test1<- test1[!is.na(test1$DaysPhysHlthBad), ]
+test1<- test1[!is.na(test1$AgeDecade), ]
+test1<- test1[!is.na(test1$HHIncome), ]
+test1<- test1[!is.na(test1$Age), ]
+test1<- test1[!is.na(test1$Weight), ]
+test1<- test1[!is.na(test1$ID), ]
+nrow(test1)
+```
+
+```{r}
+# 1. Null Model
+# Here we see the accuracy of the null model: around 74.39%, slightly lower than the accuracy predicted in exercise 8.1, which was 74.42%.
+# The accuracy of the model in the training and testing sets are very similar: the former is 74.39%, while the latter is 75.2%.
+
+# Training data
+slptrain <- train %>%
+  select(SleepTrouble)
+slptrain <- na.omit(slptrain)
+tally(~SleepTrouble, data=slptrain, format="percent")
+cat("\n")
+
+# Test data
+slptest<- test %>%
+  select(SleepTrouble)
+slptest <- na.omit(slptest)
+tally(~SleepTrouble, data=slptest, format="percent")
+```
+
+```{r}
+# 2. Logistic Regression
+# First build a Decision Tree model to find the most statistically significant variables.
+# We proceed with DaysMentHlthBad, DaysPhysHlthBad, Depressed, and LittleInterest.
+example <- rpart(SleepTrouble ~. -SleepHrsNight, data=nhanes_dataset)
+example$variable.importance
+
+example_f3 <- as.formula("SleepTrouble ~ Education+MaritalStatus+HHIncomeMid+Poverty+Work+Weight+Pulse+BPSysAve+Diabetes+DaysPhysHlthBad+DaysMentHlthBad+LittleInterest+Depressed+PhysActiveDays+SmokeNow+Smoke100+Smoke100n+SmokeAge+Marijuana+HardDrugs+SexEver+SexAge+SexNumPartnLife+SexNumPartYear+SameSex+SexOrientation+PregnantNow -SleepHrsNight")
+example_forest3 <- randomForest(example_f3, data=nhanes_dataset, ntree=201, mtry=1, na.action = na.exclude)
+importance(example_forest3)
+```
+
+```{r}
+# Here is the first logistic regression model, with only the important variables in it.
+# Linear Model 1
+lm1train = glm(SleepTrouble ~ DaysMentHlthBad + DaysPhysHlthBad + Depressed + LittleInterest, data=train1, family=binomial)
+summary(lm1train)
+```
+
+```{r}
+# Check the probabilities for the training set
+lm1trainprobs = predict(lm1train, type="response")
+favstats(lm1trainprobs)
+
+# Build predictions based on probabilities.
+lm1trainpred=rep("No", nrow(train1))
+lm1trainpred[lm1trainprobs > 0.5]="Yes"
+
+# Misclassification table and accuracy.
+tablm1train<-table(lm1trainpred, train1$SleepTrouble)
+tablm1train
+cat("\nAccuracy: ", sum(diag(tablm1train))/sum(tablm1train))
+```
+
+```{r}
+# Check the probabilities for the testing set
+# Build predictions based on probabilities.
+lm1testprobs=predict(lm1train, newdata=test1, type="response")
+lm1testpred=rep("No", nrow(test1))
+lm1testpred[lm1testprobs > 0.5]="Yes"
+
+# Misclassification table and accuracy.
+tablm1test<-table(lm1testpred, test1$SleepTrouble)
+tablm1test
+cat("\nAccuracy: ", sum(diag(tablm1test))/sum(tablm1test))
+
+# The model accuracy in the test data is a bit better than in the training data: 77.03%.
+```
+
+
+```{r}
+# Linear Model 2
+lm2train = glm(SleepTrouble ~ DaysMentHlthBad + DaysPhysHlthBad + Depressed, data=train1, family = binomial)
+summary(lm2train)
+```
+
+```{r}
+#probability
+lm2trainprobs=predict(lm2train, type="response")
+favstats(lm2trainprobs)
+
+# Build predictions based on probabilities.
+lm2trainpred=rep("No", nrow(train1))
+lm2trainpred[lm2trainprobs>0.5]="Yes"
+
+#Missclassification table
+tablm2train<-table(lm2trainpred, train1$SleepTrouble)
+tablm2train
+cat("\nAccuracy: ", sum(diag(tablm2train))/sum(tablm2train))
+
+```
+
+```{r}
+# Check the probabilities for the testing set
+# Given that the median of the probabilities is 22%, this is the threshold I am going to be using for this exercise.
+lm2testprobs=predict(lm2train, newdata=test1, type="response")
+lm2testpred=rep("No", nrow(test1))
+lm2testpred[lm2testprobs > 0.5]="Yes"
+
+# Misclassification table
+tablm2test<-table(lm2testpred, test1$SleepTrouble)
+tablm2test
+cat("\nAccuracy: ",sum(diag(tablm2test))/sum(tablm2test))
+
+# The model accuracy in the test data is a bit better than in the training data: 77.29%.
+```
+
+
+```{r}
+# Linear Model 3
+lm3train=glm(SleepTrouble ~ DaysMentHlthBad + DaysPhysHlthBad, data=train1, family=binomial)
+summary(lm3train)
+lm3train
+```
+
+```{r}
+#probability
+lm3trainprobs=predict(lm3train, type="response")
+favstats(lm3trainprobs)
+
+# Build predictions based on probabilities.
+lm3trainpred=rep("No", nrow(train1))
+lm3trainpred[lm3trainprobs>0.5]="Yes"
+
+#Misclassification table
+tablm3train<-table(lm3trainpred, train1$SleepTrouble)
+tablm3train
+cat("\nAccuracy:", sum(diag(tablm3train))/sum(tablm3train))
+```
+
+```{r}
+# Check the probabilities for the testing set with threshold = 0.5.
+lm3testprobs=predict(lm3train, newdata=test1, type="response")
+lm3testpred=rep("No", nrow(test1))
+lm3testpred[lm3testprobs > 0.5]="Yes"
+
+# Misclassification table
+tablm3test<-table(lm3testpred, test1$SleepTrouble)
+tablm3test
+cat("\n")
+sum(diag(tablm3test))/sum(tablm3test)
+
+# The model accuracy in the test data is a bit better than in the training data: 76.9%. A very slightly improvement.
+```
+
+```{r}
+# In all the logistic regression models we saw an improvement from the training set to the testing set's accuracy.
+# We can see that our best model here is the 3rd one, with an accuracy of 76.9%, which is 2% better than our best model's accuracy in Exercise 8.1: 74.4%.
+```
+
+
+```{r}
+# 3. Decision Tree
+# Given the fact that we already know that DaysMentHlthBad and DaysPhysHlthBad are the most statistically significant ones, we shall use them in the decision tree model.
+
+mod_treefulltrain<- rpart(SleepTrouble ~ DaysMentHlthBad + DaysPhysHlthBad , data=train1)
+mod_treefulltrain
+plot(as.party(mod_treefulltrain))
+```
+
+```{r}
+# Confusion matrix and accuracy in the training set.
+train1 <- train1 %>%
+   mutate(trouble_dtree = predict(mod_treefulltrain, type="class"))
+confusion <- tally(trouble_dtree ~ SleepTrouble, data=train1, format="count")
+confusion
+cat("\nAccuracy:", sum(diag(confusion)) / nrow(train1))
+```
+
+```{r}
+# Confusion matrix and accuracy in the testing set.
+test1 <- test1 %>%
+   mutate(trouble_dtree = predict(mod_treefulltrain, newdata = test1, type="class"))
+confusion <- tally(trouble_dtree ~ SleepTrouble, data=test1, format="count")
+confusion
+cat("\nAccuracy:", sum(diag(confusion)) / nrow(test1))
+```
+
+```{r}
+# The accuracy from the test model increased a bit, it was 74.98% and now it is 76.43%.
+```
+
+
+```{r}
+# 4. Random Forest
+form <- as.formula("SleepTrouble ~ DaysMentHlthBad + DaysPhysHlthBad")
+mod_forest <- randomForest(form, data=train1, ntree=201, mtry=2)
+mod_forest
+```
+
+```{r}
+# Accuracy of the model in the training set: 74.63%.
+sum(diag(mod_forest$confusion))/nrow(train1)
+
+```
+
+```{r}
+# We can see here that the accuracy of the model in the testing set increased 78.02%.
+pred_forest <- predict(mod_forest, newdata = test1) 
+sum(diag(table(pred_forest, test1$SleepTrouble)))/nrow(test1)
+```
+
+
+# Exercise 8.5
+```{r}
+# The nasaweather package contains data about tropical storms from 1995–2005. Consider the scatter plot between the wind speed and pressure of these storms shown below. The type of storm is present in the data, and four types are given: extratropical, hurricane, tropical depression, and tropical storm. There are complicated and not terribly precises definitions for storm type. Build a classifier for the type of each storm as a function of its wind speed and pressure. Why would a decision tree make a particularly good classifier for these data? Visualize your classifier in the data space in a manner similar to Figure 8.10 or 8.11.
+library(nasaweather)
+ggplot(data = storms, aes(x = pressure, y=wind, color=type)) + geom_point(alpha=0.5)
+```
+
+```{r}
+glimpse(storms)
+```
+
+```{r}
+set.seed(364)
+n <- nrow(storms)
+test_idx <- sample.int(n, size=round(0.2*n))
+train <- storms[-test_idx,]
+test<-storms[test_idx,]
+```
+
+```{r}
+# 1. Null model
+# An important point has to be made here. According to the null model, 15.42% of the storms are extra tropical, 32.48% are hurricanes, 18.28% are depressions, and 33.8% are tropical storms. However, it is important to notice that a logistic regression cannot be performed in the data, since the response variable is not binary. 
+
+type<- train %>%
+  select(type)
+type <- na.omit(type)
+tally(~ type, data=type, format="percent")
+```
+
+```{r}
+# The output below shows us a few different paths in the decision tree:
+# When the wind speed is greater than 62.5, there are no tropical depressions at all, but there are many hurricanes.
+# When the wind speed is less than 62.5 and greater than 32.5, there are no hurricanes, but mostly tropical storms.
+# When the wind speed is less than 32.5, there are mostly tropical depressions.
+
+form<-as.formula("type ~ wind + pressure")
+mod_tree<- rpart(form , data=train)
+mod_tree
+```
+
+```{r}
+printcp(mod_tree)
+```
+
+```{r}
+# Below we can see that the model's accuracy in the training set is around 85.48%, which is very good. 
+
+nrow(train)
+train <- train %>%
+   mutate(type_dtree = predict(mod_tree, type="class"))
+confusion <- tally(type_dtree ~ type, data=train, format="count")
+confusion
+sum(diag(confusion)) / nrow(train)
+```
+
+```{r}
+mod_tree1<- rpart(form , data=test)
+mod_tree1
+```
+
+```{r}
+# Below we see that the model's accuracy in the testing data is 90.89%, which is higher than the training set's accuracy. We conclude that the relationship between wind and pressure can be highly significant, being useful for us in regards to predict the kind of storm there is, given the values of these two variables.
+
+nrow(test)
+test1 <- test %>%
+   mutate(type_dtree = predict(mod_tree1, type="class"))
+confusion1 <- tally(type_dtree ~ type, data=test1, format="count")
+confusion1
+cat("\n")
+sum(diag(confusion1)) / nrow(test1)
+```
+
+```{r}
+ggplot(data = storms, aes(x = wind, y = pressure)) + geom_count(aes(color = type), alpha = 0.5) + geom_vline(xintercept = 62.5) + geom_segment(x = 32.5, xend = 62.5, y = 0, yend = Inf) + geom_segment(x = 32.5, xend = 62.5, y = 985.5, yend = Inf ) + annotate("rect", xmin = 32.5, xmax = 62.5, ymin = 985.5, ymax = Inf, fill = "blue", alpha = 0.1)
+```
+
+```{r}
+# I believe that the reason why the decision tree model does so well with this data is because the data contains many 'categories' that are limited by the values of wind and pressure. For instance, a hurricane is characterized by strong wind, but not much pressure. A tropical depression on the other hand, has high pressure and not much strong wind. The data can be broken down into the different types of storms. All in all, the response variable can be classified with a high accuracy due to the explanatory variables ~'explaining'~ the data very well.
+```
+

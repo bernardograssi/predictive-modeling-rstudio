@@ -1,0 +1,86 @@
+---
+title: "Homework #5"
+author: "Bernardo Santos"
+date: "10/14/2021"
+output: word_document
+---
+
+# Install mlbench package and load its library. Read in the BreastCancer dataset. Build three different logistic regression models to predict a malignant tumor. Fully compare and interpret your models.
+```{r}
+library(mlbench)
+library(mosaic)
+data("BreastCancer")
+cancer_dataset <- as.data.frame(BreastCancer)
+head(cancer_dataset,10)
+```
+
+# Convert columns to numeric.
+```{r}
+i <- c(2:10)
+cancer_dataset[ , i] <- apply(cancer_dataset[ , i], 2, function(x) as.numeric(as.character(x)))
+head(cancer_dataset, 10)
+```
+
+# Convert NAs to 0s and trasnform the Class column to binary. 
+```{r}
+cancer_dataset$Bare.nuclei[is.na(cancer_dataset$Bare.nuclei)] <- 0
+cancer_dataset <- cancer_dataset %>% 
+  mutate(class_binary=as.numeric(Class == "benign"))
+k = c(2:10)
+cor(cancer_dataset[ , k])
+```
+
+# Full model:
+```{r}
+# From the output we can see that the full model is not very reliable. Firstly, it contains high values for the Null Deviance and the Residual Deviance, meaning the model does not explain the data very well. Secondly, when we look at the p-values, we see that 5 of the variables (cell.size, cell.shape, epith.c.size, normal.nucleoli, mitoses) have p-values higher than 0.05, which means that randomness play an important role in the model when these variables are used. Lastly, the AIC value is substantially high, which is not a great sign.
+
+# It is visible that all the variables have a positive association with the response variable, since the estimate coefficient of the variables are all greater than 0, meaning that as the values of the variables increase, the response variable is expected to increase too.
+
+# We can see from the confidence interval output that some of the variables, such as Cell.size, Cell.shape, Epith.c.size, and Normal.nucleoli include 0 in the interval, which means that they are not statistically significant.
+
+glm_fit1 <- glm(Class ~ Cl.thickness + Cell.size + Cell.shape + Marg.adhesion + Epith.c.size + Bare.nuclei + Bl.cromatin + Normal.nucleoli + Mitoses,data=cancer_dataset,family=binomial)
+summary(glm_fit1)
+
+probs_1 <- predict(glm_fit1, type="response")
+predict_1 = rep("benign", nrow(cancer_dataset))
+predict_1[probs_1>0.8]= "malignant"
+table(predict_1, cancer_dataset$Class)
+confint(glm_fit1)
+```
+# Model with variables that had p-values less than 0.05.
+```{r}
+# Although this model contains the AIC and residual deviance values slightly higher than the previous one, it has all p-values less than 0.05, meaning that all the variables are statistically significant.
+
+# All the variables continue to have a positive association with the response variable, meaning that as the value of the variables increase, the response variable is expected to increase too.
+
+# None of the variables contain 0 in their 95% intervals, which is a good sign.
+
+glm_fit2 <- glm(Class ~ Cl.thickness + Marg.adhesion + Epith.c.size + Bare.nuclei + Bl.cromatin,data=cancer_dataset,family=binomial)
+summary(glm_fit2)
+
+probs_2 <- predict(glm_fit2, type="response")
+predict_2 = rep("benign", nrow(cancer_dataset))
+predict_2[probs_2>0.8]="malignant"
+table(predict_2, cancer_dataset$Class)
+confint(glm_fit2)
+```
+
+# Model with the variables with best p-values:
+```{r}
+# This last model, although having increased AIC and residual deviance, has all the p-values really small, meaning that randomness has no role in the model.
+
+# All the 3 reminiscent variables continue to have a positive association with the response variable, meaning that as the values of the variables increase, the response variable is expected to increase too.
+
+# None of the variables contain 0 in their intervals, which is a good sign in terms of statistical significance. 
+
+glm_fit3 <- glm(Class ~ Cl.thickness + Bare.nuclei + Bl.cromatin,data=cancer_dataset,family=binomial)
+summary(glm_fit3)
+
+probs_3 <- predict(glm_fit3, type="response")
+predict_3 = rep("benign", nrow(cancer_dataset))
+predict_3[probs_3>0.8]="malignant"
+table(predict_3, cancer_dataset$Class)
+confint(glm_fit3)
+```
+
+# Overall, all the models had good performance in predicting, as we can see from the confusion matrices generated at the end of each chunk, but if I were to pick just one model, I would pick the 3rd one, since it is the simplest and have the best p-values of them all.

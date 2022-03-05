@@ -1,0 +1,125 @@
+---
+title: "santosBernardoHomework-4"
+author: "Bernardo Santos"
+date: "9/21/2021"
+output: word_document
+---
+# Load the libraries and output the head of HELPrct.
+```{r}
+library(mdsr)
+library(mosaic)
+library(mosaicData)
+library(dplyr)
+head(HELPrct)
+```
+
+# Run the multiple regression model.
+```{r}
+fm <- lm(cesd ~ substance + mcs + sex + homeless, data=HELPrct)
+msummary(fm)
+confint(fm)
+```
+
+# Question E-1
+
+1. Write out the linear model.
+cesd = 57.77942 - 3.54056 * (substancecocaine) - 1.68181 * (substanceheroin) - 0.64073 * (mcs) -
+3.32387 * (sexmale) - 0.83270 * (homelesshoused)
+
+2. Calculate the predicted CESD for a female homeless cocaine-involved subject with an MCS score of 20.
+cesd = 57.77942 - 3.5406 * (1) - 1.6818 * (0) - 0.6407 * (20) - 3.3239 * (0) - 0.8327(0) = 41.42
+
+3. Interpret the 95% confidence interval for the substancecocaine coefficient.
+It tells us that the median of the coefficient for cocaine use should be between -1.555 and -5.526.
+
+4. Make a conclusion and summarize the results of a test of the homeless parameter.
+By observing the results from the msummary and the confint functions, we can conclude that the homeless parameter is not statistically significant. The reason why that is so is that the p-score of such parameter is 0.338265, which means that around 33.82% of the results can be explained by randomness alone. That is way too much for a parameter to be considered significant. Besides that, we can see that the Std. Error value (0.86864) is higher than the Estimate (-0.8327), which means that the estimate might not be reliable.
+
+5. Report and interpret the R^2 (coefficient of determination) for this model.
+The R^2 value is 0.4859, or 48.59%. It means that 48.59% of the CESD data is explained by the linear model.
+
+# Question E-3
+```{r}
+glimpse(Gestation)
+```
+
+# 1. Fit a linear regression model for birthweight (wt) as a function of the mother’s age (age).
+```{r}
+linear_m <- lm(wt ~ age, data=Gestation)
+summary(linear_m)
+```
+
+# 2. Find a 95% confidence interval and p-value for the slope coefficient.
+```{r}
+confint(linear_m)
+```
+The 95% confidence interval for the slope coefficient is in between -0.07012632 and 0.282573.
+The p-value for the slope coefficient is 0.238.
+
+3. What do you conclude about the association between a mother’s age and her baby’s birthweight?
+Given the R^2 value of 0.0003215 and the F-statistic value of 1.396, we can conclude that the association between both variables is not significant. Furthermore, the p-value for the slope of 0.238 allows us to conclude that the age variable is not statiscally significant for the model.
+
+# Question E-6
+# The atus package includes data from the American Time Use Survey (ATUS). Use the atusresp dataset to model hourly wage as a function of other predictors in the dataset.
+```{r}
+library(atus)
+glimpse(atusresp)
+```
+
+# Separate training and test sets.
+```{r}
+set.seed(200)
+n <- nrow(atusresp)
+test_idx <- sample.int(n, size=round(0.2*n))
+train <- atusresp[-test_idx,]
+nrow(train)
+
+test <- atusresp[test_idx,]
+```
+
+# Exploratory Analysis
+```{r}
+Trainsample <- subset(train, select=-c(holiday, occup_code, ind_code, labor_status, student_status, ptft, work_class, mult_jobs, partner_hh, partner_works, partner_ptft, hh_size, hh_child))
+Trainsample <- na.omit(Trainsample)
+res <- cor(Trainsample)
+round(res, 2) 
+```
+By looking at the correlation table, we can conclude that the most useful variables to predict hourly_wage should be weekly_earn and work_hrs_week, since their correlation coefficients are 0.78 and 0.20, respectively.
+
+# Boxplot for categorical variable.
+```{r}
+boxplot(train$hourly_wage ~ train$occup_code)
+```
+Looking for a categorical variable that could help in building the model, the above boxplot was built with the variable occup_code as the categorical one. However, it is notable that the box plots are overlapping in these side-by-side boxplots, meaning that this variable is not really realiable for the model.
+
+# First attempt using only weekly_earn:
+```{r}
+mod <- lm(train$hourly_wage ~ train$weekly_earn, data = train)
+summary(mod)
+```
+From the first attempt we can see that it is a moderately good model, with a R^2 value of 58.19%, meaning that the model explains that percentage of the variability of the data. P-values are also very small, meaning that randomness does not play an important role in the model, which is great. Finally, a large F-statistic of 7.827e+04 also indicates this is a good model.
+
+# Second attempt using only work_hrs_week:
+```{r}
+mod1 <- lm(train$hourly_wage ~ train$work_hrs_week, data = train)
+summary(mod1)
+```
+From the second attempt we can see that the model is not good at all. A R^2 value of 3.5%, meaning that only 3.5% of the variability of the data is explained by the model. A value of 1988 for the F-statistic value indicates this model is not so good.
+
+# Attempt using weekly_earn and work_hrs_week with train data:
+```{r}
+mod2 = lm(train$hourly_wage ~ train$weekly_earn + train$work_hrs_week, data = train)
+summary(mod2)
+```
+From the third attempt we can see that the model is way better than the first two attempts overall. Firstly, the R^2 value is of 62.14%, meaning that this percentage of the variability of the data is explained by the model, which is larger than the two previous models. Secondly, the P-value is really small, with value < 2.2e-16. Lastly, a significantly large value of 4.4e+04 for F-statistic allows us to conclude that this is the best model we have so far. 
+
+# Now test the model:
+```{r}
+mod_final <- lm(test$hourly_wage ~ test$weekly_earn + test$work_hrs_week, data = test)
+summary(mod_final)
+```
+From the test we can conclude the following:
+R^2 value of 81.13%, meaning that the model explains that percentage of the variability of the data. This is a significant percentage of the data.
+Small p-value of 0.006669, meaning that randomness does not play an important role in the model.
+Residual standard error or 2.781, the smallest so far, indicates a good model fit.
+An F-statistic value of 16.05, which is not very large, does not tell us much about the model.

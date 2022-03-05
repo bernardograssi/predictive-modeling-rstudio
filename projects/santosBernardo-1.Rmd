@@ -1,0 +1,62 @@
+---
+title: "SantosBernardoHomework-1"
+output:
+  word_document: default
+---
+# Load libraries
+```{r}
+library(mosaicData)
+library(mdsr)
+library(mosaic)
+head(Gestation)
+```
+
+# Question 7.2
+```{r}
+Bootstrap_trials <- do(1000) * 
+  median(~age, data = sample_n(Gestation, size=500), na.rm = TRUE, replace=TRUE)
+
+favstats(~median,data=Bootstrap_trials)
+```
+### The 95% confidence interval for the median age of mothers in this case is around 25.4 and 27.2, since the mean is 26.3, and the confidence interval’s limits are mean +- 2 * sd, so 26.3 +- 2 * (-0.46, 0.46) = 25.4 +- 27.2.
+
+# Question 7.4
+### If a 99% confidence interval is desired, then 3 standard deviations should be used.
+
+# Question 7.7
+### In this case, there is an interesting fact to point out. If we look at the graph constructed for survival status and smoking (without the age categories), it is clear that a higher percentage of people who do not smoke were dead at follow-up. However, when we see the graph with the facet grids (the one with the age categories), a higher percentage of people who smoked were dead at follow-up. This seems counterintuitive but it is explained by the difference in the percentages of smokers within each age category. With that being said, we can conclude that age is a strong confounding factor, which leads to a positive association between proportion of deaths (mortality) and smokers (smoking status).
+```{r}
+## See percentage of deceased people who smoked and did not smoke.
+Whickham %>% 
+  count(smoker, outcome) %>%
+  group_by(smoker) %>%
+  mutate(outcome_perc = n / sum(n)) %>%
+  filter(outcome=="Dead")
+
+### Around 31.4% of non-smokers died after the follow-up, while 23.9% of smokers died. 
+
+ggplot(Whickham, aes(x=smoker, fill=outcome)) + 
+  geom_bar(position = "fill") + labs(y="Proportion", title="Smoking Status and Outcome Proportion") + theme_dark()
+
+## Create new column called cat_age, grouping ages together (18-44, 45-64, 65+).
+Whickham_new <- Whickham %>% 
+  mutate(cat_age = ifelse(age <= 44, "18-44", ifelse(age <= 64, "45-64", "65+")))
+
+
+## Filter by outcome (deceased people only) so that we can see the percentage of the outcome per age category and smoking status.
+Whickham_new %>% 
+  count(cat_age, smoker, outcome) %>%
+  group_by(cat_age, smoker) %>%
+  mutate(outcome_perc = n / sum(n)) %>%
+  filter(outcome=="Dead")
+
+ggplot(Whickham_new, aes(x=smoker, fill=outcome)) + geom_bar(position = "fill") + 
+  labs(y="Proportion", title="Smoking Status and Outcome Proportion per Age Category") + facet_grid(. ~ cat_age) + theme_dark()
+```
+
+# Question 7.8
+### No, because although the income from the mortgagee really matters in trying to determine the factors that might be predictive of defaulting on the loan, there are other factors from the loan that can be used to predict defaulting. So dropping a loan because it is missing one important feature will leave other important features out and therefore impact negatively in the process. Also, when collecting and structuring data, it is important to realize that it is near impossible to collect everything we need, so dealing with missing data is an important trait for a data scientist.
+
+# Question 7.9
+### Since MCAR means that the propensity for a data point to be missing is completely random, the implications that the sampling will have on the results will be meaningless. Since there is no relationship between weather a data point is missing and any values in the data set, missing or observed, there will be no substantial impact in the end.
+
